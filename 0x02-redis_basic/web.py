@@ -1,76 +1,54 @@
 #!/usr/bin/env python3
-import requests
+"""In this tasks, we will implement a get_page function
+(prototype: def get_page(url: str) -> str:). The core of
+the function is very simple. It uses the requests module
+to obtain the HTML content of a particular URL and returns it.
+
+Start in a new file named web.py and do not reuse the code
+written in exercise.py.
+
+Inside get_page track how many times a particular URL was
+accessed in the key "count:{url}" and cache the result with
+an expiration time of 10 seconds.
+
+Tip: Use http://slowwly.robertomurray.co.uk to simulate
+a slow response and test your caching."""
+
+
 import redis
+import requests
 from functools import wraps
-from typing import Callable
+
+r = redis.Redis()
 
 
-def track_access_count(func: Callable) -> Callable:
-    """
-    Decorator to track the number of times a URL was accessed
-    """
-    @wraps(func)
-    def wrapper(url: str) -> str:
-        access_count_key = f"count:{url}"
-        access_count = redis_client.get(access_count_key)
-        if access_count is None:
-            access_count = 0
-        else:
-            access_count = int(access_count)
+def url_access_count(method):
+    """decorator for get_page function"""
+    @wraps(method)
+    def wrapper(url):
+        """wrapper function"""
+        key = "cached:" + url
+        cached_value = r.get(key)
+        if cached_value:
+            return cached_value.decode("utf-8")
 
-        access_count += 1
-        redis_client.set(access_count_key, access_count)
+            # Get new content and update cache
+        key_count = "count:" + url
+        html_content = method(url)
 
-        return func(url)
-
+        r.incr(key_count)
+        r.set(key, html_content, ex=10)
+        r.expire(key, 10)
+        return html_content
     return wrapper
 
 
-def cache_result(expiration: int = 10) -> Callable:
-    """
-    Decorator to cache the result with an expiration time
-    """
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        def wrapper(url: str) -> str:
-            result_key = f"result:{url}"
-            cached_result = redis_client.get(result_key)
-            if cached_result is not None:
-                return cached_result.decode('utf-8')
-
-            result = func(url)
-            redis_client.setex(result_key, expiration, result)
-            return result
-
-        return wrapper
-
-    return decorator
-
-
-@track_access_count
-@cache_result()
+@url_access_count
 def get_page(url: str) -> str:
-    """
-    Get the HTML content of a particular URL
-    """
-    response = requests.get(url)
-    return response.text
+    """obtain the HTML content of a particular"""
+    results = requests.get(url)
+    return results.text
 
 
 if __name__ == "__main__":
-    redis_client = redis.Redis()
-
-    slow_url = "http://slowwly.robertomurray.co.uk/delay/5000/url/http://www.google.com"
-    fast_url = "http://www.google.com"
-
-    slow_content = get_page(slow_url)
-    print(f"Content of slow URL (cached): {slow_content}")
-
-    fast_content = get_page(fast_url)
-    print(f"Content of fast URL (not cached): {fast_content}")
-
-    slow_content_cached = get_page(slow_url)
-    print(f"Content of slow URL (from cache): {slow_content_cached}")
-
-    slow_access_count = redis_client.get(f"count:{slow_url}")
-    print(f"Access count for slow URL: {slow_access_count}")
+    get_page('http://slowwly.robertomurray.co.uk')
